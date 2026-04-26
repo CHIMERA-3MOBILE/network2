@@ -7,8 +7,12 @@ import 'services/network_service.dart';
 import 'services/encryption_service.dart';
 import 'services/logger_service.dart';
 import 'services/settings_service.dart';
+import 'services/advanced_encryption_service.dart';
+import 'services/error_handling_service.dart';
+import 'services/performance_monitor_service.dart';
 import 'widgets/animated_file_item.dart';
 import 'widgets/network_status_card.dart';
+import 'widgets/enhanced_ui_components.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

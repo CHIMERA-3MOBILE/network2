@@ -13,6 +13,7 @@ import 'services/performance_monitor_service.dart';
 import 'widgets/animated_file_item.dart';
 import 'widgets/network_status_card.dart';
 import 'widgets/enhanced_ui_components.dart';
+import 'models/network_status.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

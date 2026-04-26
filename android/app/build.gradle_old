@@ -18,7 +18,7 @@ if (flutterVersionCode == null) {
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
 if (flutterVersionName == null) {
-    flutterVersionName = '1.0.0'
+    flutterVersionName = '1.0'
 }
 
 plugins {
@@ -54,37 +54,11 @@ android {
 
     defaultConfig {
         applicationId "com.chimera.network_app"
-        minSdkVersion 23
+        minSdkVersion 21
         targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
-        
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    signingConfigs {
-        debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
-        
-        release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            } else {
-                // Fallback to debug keystore for release builds
-                storeFile file('debug.keystore')
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
-            }
-        }
     }
 
     buildTypes {
@@ -92,17 +66,13 @@ android {
             debuggable true
             minifyEnabled false
             applicationIdSuffix ".debug"
-            versionNameSuffix "-debug"
-            signingConfig signingConfigs.debug
         }
         
         profile {
             debuggable false
             minifyEnabled true
             applicationIdSuffix ".profile"
-            versionNameSuffix "-profile"
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
         }
         
         release {
@@ -110,23 +80,8 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            signingConfig signingConfigs.debug
         }
-    }
-
-    packagingOptions {
-        pickFirst '**/libc++_shared.so'
-        pickFirst '**/libjsc.so'
-        exclude 'META-INF/DEPENDENCIES'
-        exclude 'META-INF/LICENSE'
-        exclude 'META-INF/LICENSE.txt'
-        exclude 'META-INF/NOTICE'
-        exclude 'META-INF/NOTICE.txt'
-    }
-
-    lint {
-        disable 'InvalidPackage'
-        checkReleaseBuilds false
     }
 }
 
@@ -137,17 +92,5 @@ flutter {
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
     implementation 'androidx.multidex:multidex:2.0.1'
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    
-    // Testing dependencies
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    implementation 'androidx.work:work-runtime-ktx:2.8.1'
 }
-
-// Apply Flutter plugin
-apply plugin: 'com.google.gms.google-services' // Only if using Firebase
-apply plugin: 'com.google.firebase.crashlytics' // Only if using Firebase Crashlytics

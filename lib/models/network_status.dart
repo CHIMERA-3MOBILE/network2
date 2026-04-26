@@ -1,10 +1,10 @@
 /// Professional network status enumeration for state management
 enum NetworkStatus {
   /// Network is completely disconnected
-  disconnected,
+  disconnected,  
   
   /// Network is connected but no active transfers
-  connected,
+  connected,  
   
   /// Network is active with ongoing operations
   active,

@@ -1,13 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:shimmer/shimmer.dart';
 
+/// Professional animated file item widget with Material Design 3
 class AnimatedFileItem extends StatefulWidget {
-  final String name;
-  final String type;
-  final VoidCallback onTap;
-  final IconData? customIcon;
+  final String fileName;
+  final String fileSize;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool isSelected;
+  final AnimationController? animationController;
 
   const AnimatedFileItem({
-    super.key,
+    Key? key,
+    required this.fileName,
+    required this.fileSize,
+    required this.icon,
+    this.onTap,
+    this.isSelected = false,
+    this.animationController,
+  }) : super(key: key);
     required this.name,
     required this.type,
     required this.onTap,

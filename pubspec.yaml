@@ -1,11 +1,12 @@
 name: network_app
-description: A disguised P2P mesh communication utility application.
+description: A disguised P2P mesh communication utility application with production-grade quality.
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.1.0 <4.0.0'
+  flutter: ">=3.16.0"
 
 dependencies:
   flutter:

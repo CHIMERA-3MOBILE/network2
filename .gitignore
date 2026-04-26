@@ -1,0 +1,166 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/app/build/
+/android/gradle/
+/android/gradlew
+/android/gradlew.bat
+/android/local.properties
+/android/**/GeneratedPluginRegistrant.java
+/android/**/.gradle/
+/android/**/build/
+/android/**/captures/
+/android/**/gradlew
+/android/**/gradlew.bat
+/android/**/local.properties
+/android/**/**/GeneratedPluginRegistrant.java
+/android/**/**/key.properties
+/android/**/keystore.properties
+/android/**/gradle-wrapper.jar
+
+# Web
+/web/
+
+# Windows
+*.exe
+*.msi
+*.msix
+*.appx
+*.msm
+*.msp
+
+# macOS
+*.dmg
+*.app
+*.ipa
+
+# Linux
+*.deb
+*.rpm
+*.snap
+*.flatpak
+
+# Coverage
+coverage/
+lcov.info
+
+# Test results
+test/failures/
+test/reports/
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# OS generated files
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# Keystore files
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Localization
+*.g.dart
+*.arb
+
+# Generated files
+generated_plugin_registrant.dart
+generated_plugins.dart
+
+# Build cache
+.cache/
+.gradle/
+build/
+dist/
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Firebase
+google-services.json
+GoogleService-Info.plist
+
+# Assets that should be committed but might be ignored by default
+!assets/fonts/
+!assets/images/
+!assets/animations/
+!assets/icons/
+
+# Test coverage
+coverage/lcov.info

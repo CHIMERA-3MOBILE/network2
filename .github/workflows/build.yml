@@ -148,8 +148,13 @@ jobs:
         echo "🧪 Running unit tests with coverage..."
         flutter test --coverage --reporter=expanded
         
-        echo "📊 Generating coverage report..."
-        genhtml coverage/lcov.info -o coverage/html || echo "Coverage generation skipped"
+        echo "📊 Processing coverage data..."
+        if [ -f "coverage/lcov.info" ]; then
+          echo "✅ Coverage report generated successfully"
+          head -20 coverage/lcov.info
+        else
+          echo "⚠️ Coverage file not found, continuing without coverage report"
+        fi
 
     - name: 📤 Upload Coverage Reports
       uses: actions/upload-artifact@v4
@@ -227,7 +232,11 @@ jobs:
         # APK signature verification for release builds
         if [[ "${{ matrix.build-type }}" == "release" ]]; then
           echo "🔐 Verifying APK signature..."
-          keytool -printcert -jarfile "$apk_path" || echo "Signature verification completed"
+          if command -v keytool &> /dev/null; then
+            keytool -printcert -jarfile "$apk_path" || echo "Signature verification completed"
+          else
+            echo "⚠️ keytool not available, skipping signature verification"
+          fi
         fi
 
     - name: 🏗️ Build App Bundle (Release Only)

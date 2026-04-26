@@ -51,7 +51,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        token: ${{ secrets.github_token }}
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: 🔍 Validate Flutter Configuration
       id: flutter-check
@@ -65,10 +65,10 @@ jobs:
         fi
         
         # Validate YAML syntax
-        if ! python3 -c "import yaml; yaml.safe_load(open('pubspec.yaml'))"; then
+        python3 -c "import yaml; yaml.safe_load(open('pubspec.yaml'))" || {
           echo "❌ pubspec.yaml syntax error"
           exit 1
-        fi
+        }
         
         # Extract Flutter version
         flutter_version=$(grep "flutter:" pubspec.yaml -A 5 | grep "sdk:" | sed 's/.*sdk:.*>=[[:space:]]*\([0-9.]*\).*/\1/' || echo "3.0.0")
@@ -90,13 +90,13 @@ jobs:
       id: build-number
       uses: einaregilsson/build-number@v1
       with:
-        token: ${{ secrets.github_token }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         build-number: ${{ github.run_number }}
 
     - name: 📋 Create Version Tag
       id: version-tag
       run: |
-        build_number="${{ steps.build-number.outputs.build_number }}"
+        build_number="${{ steps.build-number.outputs.build-number }}"
         commit_sha="${{ github.sha }}"
         short_sha="${commit_sha:0:7}"
         version_tag="v1.0.$build_number-$short_sha"
@@ -110,7 +110,7 @@ jobs:
         
         if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master" ]]; then
           should_release="true"
-        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+        elif [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
           should_release="true"
         elif [[ "${{ github.event.inputs.create_release }}" == "true" ]]; then
           should_release="true"
@@ -405,7 +405,7 @@ jobs:
         ## 🔧 Installation Instructions
         
         ### APK Installation
-        1. Download the `app-release.apk` file
+        1. Download `app-release.apk` file
         2. Enable "Install from unknown sources" in device settings
         3. Locate and tap the downloaded APK file
         4. Follow the on-screen installation prompts

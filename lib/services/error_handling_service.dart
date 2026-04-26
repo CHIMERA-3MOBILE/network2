@@ -1,29 +1,64 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'logger_service.dart';
 
 /// Professional error handling service with comprehensive retry logic
+/// 
+/// This service provides enterprise-grade error handling capabilities with:
+/// - Exponential backoff retry logic with configurable parameters
+/// - Error tracking and history for debugging and monitoring
+/// - Circuit breaker pattern for preventing cascading failures
+/// - Error rate monitoring and alerting
+/// - Comprehensive logging for all error scenarios
+/// - Performance metrics for error handling operations
 class ErrorHandlingService {
   static final ErrorHandlingService _instance = ErrorHandlingService._internal();
   factory ErrorHandlingService() => _instance;
   ErrorHandlingService._internal();
 
-  // Error tracking
+  final LoggerService _logger = LoggerService();
+  
+  // Error tracking with comprehensive metadata
   final Map<String, List<ErrorRecord>> _errorHistory = {};
   final Map<String, int> _errorCounts = {};
   final Map<String, DateTime> _lastErrorTime = {};
+  final Map<String, int> _successCounts = {};
   
-  // Retry configuration
+  // Retry configuration with enterprise defaults
   static const int _defaultMaxRetries = 3;
   static const Duration _defaultBaseDelay = Duration(seconds: 1);
   static const double _backoffMultiplier = 2.0;
   static const Duration _maxDelay = Duration(seconds: 30);
-
-  // Error thresholds
+  
+  // Error thresholds for circuit breaker
   static const int _maxErrorsPerType = 10;
   static const Duration _errorWindow = Duration(minutes: 5);
+  static const double _errorRateThreshold = 0.5; // 50% error rate
+  
+  // Circuit breaker state
+  final Map<String, CircuitBreakerState> _circuitBreakers = {};
+  
+  // Performance monitoring
+  int _totalRetries = 0;
+  int _totalSuccesses = 0;
+  DateTime _lastReset = DateTime.now();
 
   /// Execute operation with exponential backoff retry logic
+  /// 
+  /// Executes the given operation with automatic retry logic using
+  /// exponential backoff delay between attempts. Supports custom retry
+  /// conditions and configurable delay parameters.
+  /// 
+  /// [operation] - The async operation to execute
+  /// [operationName] - Name for logging and tracking
+  /// [maxRetries] - Maximum number of retry attempts
+  /// [baseDelay] - Initial delay before first retry
+  /// [backoffMultiplier] - Multiplier for exponential backoff
+  /// [maxDelay] - Maximum delay between retries
+  /// [retryCondition] - Custom function to determine if retry should occur
+  /// Returns result of the operation
+  /// Throws last encountered error if all retries fail
   Future<T> executeWithRetry<T>(
     Future<T> Function() operation,
     String operationName, {
@@ -38,15 +73,24 @@ class ErrorHandlingService {
     final multiplier = backoffMultiplier ?? _backoffMultiplier;
     final maxDel = maxDelay ?? _maxDelay;
 
+    // Check circuit breaker
+    if (_isCircuitBreakerOpen(operationName)) {
+      _logger.warning('Circuit breaker open for operation: $operationName');
+      throw CircuitBreakerOpenException('Circuit breaker open for operation: $operationName');
+    }
+
     while (attempt <= maxRetries) {
       try {
         final result = await operation();
         if (attempt > 0) {
           _logSuccess(operationName, attempt);
+          _recordSuccess(operationName);
         }
+        _resetCircuitBreaker(operationName);
         return result;
       } catch (error) {
         attempt++;
+        _recordError(operationName, error);
         
         // Check if we should retry
         if (attempt > maxRetries || (retryCondition != null && !retryCondition(error))) {
@@ -67,13 +111,22 @@ class ErrorHandlingService {
         if (delay > maxDel) {
           delay = maxDel;
         }
+        _totalRetries++;
       }
+    }
+
+    // Open circuit breaker if too many failures
+    if (_shouldOpenCircuitBreaker(operationName)) {
+      _openCircuitBreaker(operationName);
     }
 
     throw OperationException('Operation failed after $maxRetries retries');
   }
 
   /// Execute operation with comprehensive error handling and fallback
+  /// 
+  /// Provides enhanced error handling with timeout support, custom error
+  /// handlers, retry logic, and fallback values for graceful degradation.
   Future<T> executeWithErrorHandling<T>(
     Future<T> Function() operation,
     String operationName, {
@@ -91,6 +144,7 @@ class ErrorHandlingService {
     } catch (error) {
       // Log the error
       await _logError(operationName, error, 1);
+      _recordError(operationName, error);
       
       // Call custom error handler if provided
       if (onError != null) {
@@ -104,268 +158,179 @@ class ErrorHandlingService {
       
       // Return fallback value if available
       if (fallbackValue != null) {
+        _logger.info('Returning fallback value for $operationName');
         return fallbackValue;
       }
       
-      // Rethrow if no fallback
       rethrow;
     }
   }
 
-  /// Handle network-specific errors with professional logic
-  Future<T> handleNetworkError<T>(
-    Future<T> Function() operation,
-    String operationName, {
-    T? fallbackValue,
-    Duration? timeout = const Duration(seconds: 30),
-  }) async {
-    try {
-      // Check connectivity first
-      final connectivity = await Connectivity().checkConnectivity();
-      if (connectivity == ConnectivityResult.none) {
-        throw NetworkException('No internet connection available');
-      }
-
-      return await executeWithErrorHandling(
-        operation,
-        operationName,
-        timeout: timeout,
-        fallbackValue: fallbackValue,
-        shouldRetry: (error) => _shouldRetryNetworkError(error),
-        onError: (error) => _handleNetworkErrorSpecific(error),
-      );
-    } catch (error) {
-      await _logError(operationName, error, 1);
-      if (fallbackValue != null) {
-        return fallbackValue;
-      }
-      rethrow;
-    }
-  }
-
-  /// Determine if network error should be retried
-  bool _shouldRetryNetworkError(dynamic error) {
-    if (error is SocketException) {
-      return true; // Network issues are usually temporary
-    }
-    if (error is TimeoutException) {
-      return true; // Timeouts can be retried
-    }
-    if (error is NetworkException) {
-      return !error.message.contains('authentication'); // Don't retry auth errors
-    }
-    return false;
-  }
-
-  /// Handle specific network error types
-  Future<void> _handleNetworkErrorSpecific(dynamic error) async {
-    if (error is SocketException) {
-      // Could implement specific socket error handling
-      print('Socket error: ${error.message}');
-    } else if (error is TimeoutException) {
-      // Could implement timeout-specific handling
-      print('Timeout error: ${error.message}');
-    } else if (error is NetworkException) {
-      // Could implement network-specific handling
-      print('Network error: ${error.message}');
-    }
-  }
-
-  /// Log error with comprehensive information
-  Future<void> _logError(String operationName, dynamic error, int attempt) async {
-    final timestamp = DateTime.now();
-    final errorRecord = ErrorRecord(
-      operationName: operationName,
-      error: error,
-      timestamp: timestamp,
-      attempt: attempt,
-    );
-
-    // Add to error history
-    _errorHistory.putIfAbsent(operationName, () => []).add(errorRecord);
+  /// Record error for tracking and analysis
+  void _recordError(String operationName, dynamic error) {
     _errorCounts[operationName] = (_errorCounts[operationName] ?? 0) + 1;
-    _lastErrorTime[operationName] = timestamp;
-
-    // Clean old errors
-    _cleanOldErrors(operationName);
-
-    // Check error thresholds
-    _checkErrorThresholds(operationName);
-
-    // Log to console (in production, use proper logging)
-    print('ERROR [$operationName] Attempt $attempt: ${error.toString()}');
+    _lastErrorTime[operationName] = DateTime.now();
+    
+    final record = ErrorRecord(
+      error: error,
+      timestamp: DateTime.now(),
+      operationName: operationName,
+    );
+    
+    _errorHistory.putIfAbsent(operationName, () => []);
+    _errorHistory[operationName]!.add(record);
+    
+    // Keep only recent errors
+    if (_errorHistory[operationName]!.length > _maxErrorsPerType) {
+      _errorHistory[operationName]!.removeAt(0);
+    }
   }
 
-  /// Log retry attempt
-  Future<void> _logRetry(String operationName, dynamic error, int attempt, Duration delay) async {
-    print('RETRY [$operationName] Attempt $attempt in ${delay.inSeconds}s: ${error.toString()}');
+  /// Record success for metrics and circuit breaker
+  void _recordSuccess(String operationName) {
+    _successCounts[operationName] = (_successCounts[operationName] ?? 0) + 1;
+    _totalSuccesses++;
   }
 
-  /// Log successful operation after retries
-  Future<void> _logSuccess(String operationName, int attempts) async {
-    print('SUCCESS [$operationName] Completed after $attempts attempts');
-  }
-
-  /// Clean old error records
-  void _cleanOldErrors(String operationName) {
-    final errors = _errorHistory[operationName];
-    if (errors == null) return;
-
-    final now = DateTime.now();
-    errors.removeWhere((record) => now.difference(record.timestamp) > _errorWindow);
-  }
-
-  /// Check error thresholds and take action
-  void _checkErrorThresholds(String operationName) {
+  /// Check if circuit breaker should be opened
+  bool _shouldOpenCircuitBreaker(String operationName) {
     final errorCount = _errorCounts[operationName] ?? 0;
-    final errors = _errorHistory[operationName] ?? [];
+    final successCount = _successCounts[operationName] ?? 0;
+    final totalAttempts = errorCount + successCount;
+    
+    if (totalAttempts < 5) return false; // Minimum attempts before opening
+    
+    final errorRate = errorCount / totalAttempts;
+    return errorRate > _errorRateThreshold;
+  }
 
-    if (errorCount >= _maxErrorsPerType) {
-      // Could implement circuit breaker pattern
-      print('WARNING [$operationName] Error threshold reached: $errorCount errors');
+  /// Check if circuit breaker is currently open
+  bool _isCircuitBreakerOpen(String operationName) {
+    final state = _circuitBreakers[operationName];
+    if (state == null) return false;
+    
+    // Check if cooldown period has passed
+    if (DateTime.now().isAfter(state.cooldownUntil)) {
+      _circuitBreakers.remove(operationName);
+      return false;
     }
+    
+    return state.isOpen;
+  }
 
-    // Check for rapid-fire errors
-    if (errors.length >= 5) {
-      final timeSpan = errors.last.timestamp.difference(errors.first.timestamp);
-      if (timeSpan.inSeconds < 60) {
-        print('CRITICAL [$operationName] Rapid errors detected: ${errors.length} errors in ${timeSpan.inSeconds}s');
-      }
-    }
+  /// Open circuit breaker for operation
+  void _openCircuitBreaker(String operationName) {
+    _circuitBreakers[operationName] = CircuitBreakerState(
+      isOpen: true,
+      openedAt: DateTime.now(),
+      cooldownUntil: DateTime.now().add(_errorWindow),
+    );
+    _logger.warning('Circuit breaker opened for operation: $operationName');
+  }
+
+  /// Reset circuit breaker for operation
+  void _resetCircuitBreaker(String operationName) {
+    _circuitBreakers.remove(operationName);
   }
 
   /// Get comprehensive error statistics
   Map<String, dynamic> getErrorStatistics() {
-    final totalErrors = _errorCounts.values.fold(0, (sum, count) => sum + count);
-    final uniqueErrorTypes = _errorCounts.length;
-    
-    final errorDetails = <String, dynamic>{};
-    for (final entry in _errorCounts.entries) {
-      errorDetails[entry.key] = {
-        'count': entry.value,
-        'lastError': _lastErrorTime[entry.key]?.toIso8601String(),
-        'recentErrors': _errorHistory[entry.key]?.length ?? 0,
-      };
-    }
-
     return {
-      'totalErrors': totalErrors,
-      'uniqueErrorTypes': uniqueErrorTypes,
+      'totalRetries': _totalRetries,
+      'totalSuccesses': _totalSuccesses,
       'errorCounts': Map.from(_errorCounts),
-      'errorDetails': errorDetails,
-      'lastUpdateTime': DateTime.now().toIso8601String(),
+      'successCounts': Map.from(_successCounts),
+      'lastReset': _lastReset.toIso8601String(),
+      'uptime': DateTime.now().difference(_lastReset).inSeconds,
+      'circuitBreakers': _circuitBreakers.map((key, value) => MapEntry(
+        key,
+        {
+          'isOpen': value.isOpen,
+          'openedAt': value.openedAt.toIso8601String(),
+          'cooldownUntil': value.cooldownUntil.toIso8601String(),
+        },
+      )),
     };
   }
 
-  /// Clear error history for specific operation
-  void clearErrorHistory(String operationName) {
-    _errorHistory.remove(operationName);
-    _errorCounts.remove(operationName);
-    _lastErrorTime.remove(operationName);
-  }
-
-  /// Clear all error history
-  void clearAllErrorHistory() {
+  /// Reset error statistics
+  void resetStatistics() {
     _errorHistory.clear();
     _errorCounts.clear();
     _lastErrorTime.clear();
+    _successCounts.clear();
+    _circuitBreakers.clear();
+    _totalRetries = 0;
+    _totalSuccesses = 0;
+    _lastReset = DateTime.now();
+    _logger.info('Error handling service statistics reset');
   }
 
-  /// Get error rate for specific operation
-  double getErrorRate(String operationName) {
-    final errors = _errorHistory[operationName] ?? [];
-    if (errors.isEmpty) return 0.0;
-
-    final timeSpan = DateTime.now().difference(errors.first.timestamp);
-    if (timeSpan.inSeconds == 0) return 0.0;
-
-    return errors.length / timeSpan.inSeconds;
+  /// Log error with comprehensive details
+  Future<void> _logError(String operationName, dynamic error, int attempt) async {
+    _logger.error(
+      'Operation failed: $operationName (attempt $attempt)',
+      error: error,
+    );
   }
 
-  /// Check if operation is in error state
-  bool isInErrorState(String operationName) {
-    final errorCount = _errorCounts[operationName] ?? 0;
-    final lastError = _lastErrorTime[operationName];
-    
-    if (errorCount >= _maxErrorsPerType) return true;
-    
-    if (lastError != null) {
-      final timeSinceLastError = DateTime.now().difference(lastError);
-      if (timeSinceLastError.inMinutes < 1 && errorCount >= 3) return true;
-    }
-    
-    return false;
+  /// Log success after retry
+  Future<void> _logSuccess(String operationName, int attempt) async {
+    _logger.info('Operation succeeded after $attempt retries: $operationName');
   }
 
-  /// Get recommended action for error
-  String getRecommendedAction(String operationName) {
-    final errorCount = _errorCounts[operationName] ?? 0;
-    final lastError = _lastErrorTime[operationName];
-    
-    if (errorCount == 0) {
-      return 'No errors detected';
-    } else if (errorCount < 3) {
-      return 'Monitor for pattern';
-    } else if (errorCount < _maxErrorsPerType) {
-      return 'Consider retry with backoff';
-    } else {
-      return 'Implement circuit breaker or manual intervention';
-    }
+  /// Log retry attempt
+  Future<void> _logRetry(String operationName, dynamic error, int attempt, Duration delay) async {
+    _logger.warning(
+      'Retrying operation: $operationName (attempt $attempt, delay: ${delay.inSeconds}s)',
+    );
   }
+}
 
-  /// Create error report for debugging
-  Map<String, dynamic> createErrorReport() {
-    return {
-      'timestamp': DateTime.now().toIso8601String(),
-      'statistics': getErrorStatistics(),
-      'recommendations': _generateRecommendations(),
-      'healthStatus': _getHealthStatus(),
-    };
-  }
+/// Error record for tracking and analysis
+class ErrorRecord {
+  final dynamic error;
+  final DateTime timestamp;
+  final String operationName;
+  
+  ErrorRecord({
+    required this.error,
+    required this.timestamp,
+    required this.operationName,
+  });
+}
 
-  /// Generate recommendations based on error patterns
-  List<String> _generateRecommendations() {
-    final recommendations = <String>[];
-    
-    for (final entry in _errorCounts.entries) {
-      final operationName = entry.key;
-      final errorCount = entry.value;
-      
-      if (errorCount >= _maxErrorsPerType) {
-        recommendations.add('High error rate for $operationName - Consider circuit breaker');
-      }
-      
-      if (isInErrorState(operationName)) {
-        recommendations.add('$operationName is in error state - Investigate immediately');
-      }
-      
-      final errorRate = getErrorRate(operationName);
-      if (errorRate > 0.1) { // More than 1 error per 10 seconds
-        recommendations.add('High error rate for $operationName - Check system health');
-      }
-    }
-    
-    if (recommendations.isEmpty) {
-      recommendations.add('All systems operating normally');
-    }
-    
-    return recommendations;
-  }
+/// Circuit breaker state for preventing cascading failures
+class CircuitBreakerState {
+  final bool isOpen;
+  final DateTime openedAt;
+  final DateTime cooldownUntil;
+  
+  CircuitBreakerState({
+    required this.isOpen,
+    required this.openedAt,
+    required this.cooldownUntil,
+  });
+}
 
-  /// Get overall health status
-  String _getHealthStatus() {
-    final totalErrors = _errorCounts.values.fold(0, (sum, count) => sum + count);
-    
-    if (totalErrors == 0) {
-      return 'Healthy';
-    } else if (totalErrors < 10) {
-      return 'Minor Issues';
-    } else if (totalErrors < 50) {
-      return 'Degraded';
-    } else {
-      return 'Critical';
-    }
-  }
+/// Custom exception for operation failures
+class OperationException implements Exception {
+  final String message;
+  
+  OperationException(this.message);
+  
+  @override
+  String toString() => 'OperationException: $message';
+}
+
+/// Custom exception for circuit breaker open state
+class CircuitBreakerOpenException implements Exception {
+  final String message;
+  
+  CircuitBreakerOpenException(this.message);
+  
+  @override
+  String toString() => 'CircuitBreakerOpenException: $message';
 }
 
 /// Error record for tracking
@@ -374,36 +339,26 @@ class ErrorRecord {
   final dynamic error;
   final DateTime timestamp;
   final int attempt;
-
+  
   ErrorRecord({
     required this.operationName,
     required this.error,
     required this.timestamp,
     required this.attempt,
   });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'operationName': operationName,
-      'error': error.toString(),
-      'timestamp': timestamp.toIso8601String(),
-      'attempt': attempt,
-    };
-  }
 }
 
-/// Custom exceptions for better error handling
+/// Network exception for network-related errors
 class NetworkException implements Exception {
   final String message;
-  final int? statusCode;
-  final dynamic originalError;
   
-  NetworkException(this.message, {this.statusCode, this.originalError});
+  NetworkException(this.message);
   
   @override
-  String toString() => 'NetworkException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
+  String toString() => 'NetworkException: $message';
 }
 
+/// Operation exception for operation failures
 class OperationException implements Exception {
   final String message;
   final String? operationName;

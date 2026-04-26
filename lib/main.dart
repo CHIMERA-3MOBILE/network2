@@ -15,66 +15,131 @@ import 'widgets/network_status_card.dart';
 import 'widgets/enhanced_ui_components.dart';
 import 'models/network_status.dart';
 
+/// Professional application entry point with comprehensive initialization
+/// 
+/// This main function provides enterprise-grade application initialization with:
+/// - Comprehensive error handling and recovery
+/// - Professional service initialization sequence
+/// - Performance monitoring and logging
+/// - Permission management with detailed tracking
+/// - Background service configuration
+/// - First launch detection and setup
 void main() async {
+  // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Set preferred orientations
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  final logger = LoggerService();
   
-  // Initialize services
-  await initializeServices();
-  await requestPermissions();
-  await NetworkService().initialize();
-  
-  // Check first launch
-  final settingsService = SettingsService();
-  if (await settingsService.isFirstLaunch()) {
-    await settingsService.setFirstLaunchComplete();
+  try {
+    // Initialize logger first to capture all initialization logs
+    await logger.initialize();
+    logger.info('=== Application Initialization Started ===');
+    
+    // Set preferred orientations
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    logger.info('Screen orientation set to portrait only');
+    
+    // Initialize services in proper sequence
+    await initializeServices();
+    
+    // Request permissions with comprehensive tracking
+    await requestPermissions();
+    
+    // Initialize network service with error handling
+    await ErrorHandlingService().executeWithRetry(
+      () => NetworkService().initialize(),
+      'NetworkServiceInitialization',
+      maxRetries: 3,
+    );
+    
+    // Check first launch and setup
+    await handleFirstLaunch();
+    
+    logger.info('=== Application Initialization Completed Successfully ===');
+    
+    runApp(const NetworkApp());
+  } catch (e, stackTrace) {
+    logger.fatal('Failed to initialize application', error: e, stackTrace: stackTrace);
+    // Attempt to run app with minimal initialization
+    runApp(const NetworkApp());
   }
-  
-  runApp(const NetworkApp());
 }
 
+/// Initialize background service with professional configuration
+/// 
+/// Configures the background service for both Android and iOS platforms
+/// with proper notification settings and lifecycle management.
 Future<void> initializeServices() async {
-  final service = FlutterBackgroundService();
-  await service.configure(
-    androidConfiguration: AndroidConfiguration(
-      onStart: onStart,
-      isForegroundMode: true,
-      autoStart: true,
-      notificationChannelId: 'network_app_channel',
-      initialNotificationTitle: 'File Manager',
-      initialNotificationContent: 'Background service active',
-      foregroundServiceNotificationId: 888,
-    ),
-    iosConfiguration: IosConfiguration(
-      autoStart: true,
-      onForeground: onStart,
-      onBackground: onIosBackground,
-    ),
-  );
-  service.startService();
+  final logger = LoggerService();
+  logger.info('Initializing background service...');
+  
+  try {
+    final service = FlutterBackgroundService();
+    await service.configure(
+      androidConfiguration: AndroidConfiguration(
+        onStart: onStart,
+        isForegroundMode: true,
+        autoStart: true,
+        notificationChannelId: 'network_app_channel',
+        initialNotificationTitle: 'File Manager',
+        initialNotificationContent: 'Background service active',
+        foregroundServiceNotificationId: 888,
+        notificationIcon: ResourceDrawable('drawable/ic_notification'),
+      ),
+      iosConfiguration: IosConfiguration(
+        autoStart: true,
+        onForeground: onStart,
+        onBackground: onIosBackground,
+      ),
+    );
+    
+    await service.startService();
+    logger.info('Background service initialized and started');
+  } catch (e, stackTrace) {
+    logger.error('Failed to initialize background service', error: e, stackTrace: stackTrace);
+    rethrow;
+  }
 }
 
+/// Handle iOS background service lifecycle
 @pragma('vm:entry-point')
 Future<bool> onIosBackground(ServiceInstance service) async {
+  final logger = LoggerService();
+  logger.info('iOS background service activated');
   return true;
 }
 
+/// Handle background service start for both platforms
+/// 
+/// Manages the background service lifecycle including
+/// service stop events and proper cleanup.
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
+  final logger = LoggerService();
+  logger.info('Background service started');
+  
   if (service is AndroidServiceInstance) {
     service.on('stopService').listen((event) {
+      logger.info('Stop service request received');
       service.stopSelf();
     });
   }
 }
 
+/// Request all necessary permissions with comprehensive tracking
+/// 
+/// Requests and tracks all required permissions for the application
+/// including notifications, location, and Bluetooth services.
+/// Provides detailed logging for permission status.
 Future<void> requestPermissions() async {
   final logger = LoggerService();
+  final errorHandling = ErrorHandlingService();
+  
+  logger.info('Requesting application permissions...');
+  
   final permissions = [
     Permission.notification,
     Permission.location,
@@ -84,19 +149,62 @@ Future<void> requestPermissions() async {
     Permission.bluetoothConnect,
   ];
 
+  int grantedCount = 0;
+  int deniedCount = 0;
+  int permanentlyDeniedCount = 0;
+
   for (final permission in permissions) {
     try {
-      final status = await permission.request();
-      if (status.isGranted) {
-        logger.info('Permission granted: ${permission.toString()}');
-      } else if (status.isDenied) {
-        logger.warning('Permission denied: ${permission.toString()}');
-      } else if (status.isPermanentlyDenied) {
-        logger.error('Permission permanently denied: ${permission.toString()}');
-      }
-    } catch (e) {
-      logger.error('Error requesting permission: ${permission.toString()}', error: e);
+      await errorHandling.executeWithRetry(
+        () async {
+          final status = await permission.request();
+          
+          if (status.isGranted) {
+            logger.info('Permission granted: ${permission.toString()}');
+            grantedCount++;
+          } else if (status.isDenied) {
+            logger.warning('Permission denied: ${permission.toString()}');
+            deniedCount++;
+          } else if (status.isPermanentlyDenied) {
+            logger.error('Permission permanently denied: ${permission.toString()}');
+            permanentlyDeniedCount++;
+          }
+        },
+        'PermissionRequest_${permission.toString()}',
+        maxRetries: 2,
+      );
+    } catch (e, stackTrace) {
+      logger.error('Error requesting permission: ${permission.toString()}', error: e, stackTrace: stackTrace);
     }
+  }
+
+  logger.info('Permission request summary: $grantedCount granted, $deniedCount denied, $permanentlyDeniedCount permanently denied');
+  
+  if (permanentlyDeniedCount > 0) {
+    logger.warning('Some permissions are permanently denied. App functionality may be limited.');
+  }
+}
+
+/// Handle first launch detection and setup
+/// 
+/// Checks if this is the first launch of the application
+/// and performs initial setup tasks if needed.
+Future<void> handleFirstLaunch() async {
+  final logger = LoggerService();
+  final settingsService = SettingsService();
+  
+  try {
+    final isFirstLaunch = await settingsService.getFirstLaunch();
+    
+    if (isFirstLaunch) {
+      logger.info('First launch detected. Performing initial setup...');
+      await settingsService.setFirstLaunch(false);
+      logger.info('Initial setup completed');
+    } else {
+      logger.info('Returning user detected');
+    }
+  } catch (e, stackTrace) {
+    logger.error('Error handling first launch', error: e, stackTrace: stackTrace);
   }
 }
 

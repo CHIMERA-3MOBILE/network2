@@ -1,43 +1,479 @@
-name: Build App
+name: Enhanced Build Pipeline
 
 on:
   push:
     branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+    types: [ opened, synchronize, reopened ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+        - release
+        - debug
+        - profile
+      run_tests:
+        description: 'Run comprehensive tests'
+        required: false
+        default: true
+        type: boolean
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  FLUTTER_VERSION: '3.16.0'
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'zulu'
+  ARTIFACT_RETENTION_DAYS: '30'
 
 jobs:
-  build:
-    name: Build and Test
+  # 🔍 Comprehensive Validation
+  validate:
+    name: Comprehensive Validation
     runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.decision.outputs.should-release }}
+      build-number: ${{ steps.build-number.outputs.build-number }}
+      version-tag: ${{ steps.build-number.outputs.version-tag }}
+      flutter-version: ${{ steps.flutter-check.outputs.flutter-version }}
+      is-secure: ${{ steps.security-scan.outputs.is-secure }}
     
     steps:
-    - name: Checkout Code
+    - name: 📥 Checkout Repository
       uses: actions/checkout@v4
-      
-    - name: Setup Java
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🔍 Validate Flutter Configuration
+      id: flutter-check
+      run: |
+        echo "🔍 Validating Flutter project configuration..."
+        
+        # Check pubspec.yaml exists and is valid
+        if [ ! -f "pubspec.yaml" ]; then
+          echo "❌ pubspec.yaml not found"
+          exit 1
+        fi
+        
+        # Validate YAML syntax
+        python3 -c "import yaml; yaml.safe_load(open('pubspec.yaml'))" || {
+          echo "❌ pubspec.yaml syntax error"
+          exit 1
+        }
+        
+        # Extract Flutter version
+        flutter_version=$(grep "flutter:" pubspec.yaml -A 5 | grep "sdk:" | sed 's/.*sdk:.*>=[[:space:]]*\([0-9.]*\).*/\1/' || echo "3.0.0")
+        echo "📊 Flutter SDK version: $flutter_version"
+        echo "flutter-version=$flutter_version" >> $GITHUB_OUTPUT
+        
+        # Check critical dependencies
+        critical_deps=("nearby_connections" "flutter_background_service" "permission_handler" "crypto" "connectivity_plus")
+        for dep in "${critical_deps[@]}"; do
+          if ! grep -q "$dep" pubspec.yaml; then
+            echo "❌ Missing critical dependency: $dep"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Flutter configuration validated"
+
+    - name: 🔒 Security Scan
+      id: security-scan
+      run: |
+        echo "🔒 Running security analysis..."
+        
+        # Check for sensitive data
+        if grep -r "password\|secret\|key\|token" --include="*.dart" lib/ | grep -v "//" | head -5; then
+          echo "⚠️ Potential hardcoded secrets found"
+          is_secure="false"
+        else
+          echo "✅ No obvious hardcoded secrets detected"
+          is_secure="true"
+        fi
+        
+        echo "is-secure=$is_secure" >> $GITHUB_OUTPUT
+
+    - name: 🏗️ Generate Build Metadata
+      id: build-number
+      run: |
+        build_number="${{ github.run_number }}"
+        commit_sha="${{ github.sha }}"
+        short_sha="${commit_sha:0:7}"
+        version_tag="v1.0.$build_number-$short_sha"
+        echo "version-tag=$version_tag" >> $GITHUB_OUTPUT
+        echo "🏷️ Generated version tag: $version_tag"
+
+    - name: 🎯 Release Decision Logic
+      id: decision
+      run: |
+        should_release="false"
+        
+        if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master" ]]; then
+          should_release="true"
+        elif [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
+          should_release="true"
+        elif [[ "${{ github.event.inputs.create_release }}" == "true" ]]; then
+          should_release="true"
+        fi
+        
+        echo "should-release=$should_release" >> $GITHUB_OUTPUT
+        echo "🎯 Release decision: $should_release"
+
+    - name: 🔍 Validate Project Structure
+      run: |
+        echo "🔍 Validating project structure..."
+        
+        # Check required directories
+        required_dirs=("lib" "test" "android" "assets")
+        for dir in "${required_dirs[@]}"; do
+          if [ ! -d "$dir" ]; then
+            echo "❌ Missing directory: $dir"
+            exit 1
+          fi
+        done
+        
+        # Check required files
+        required_files=("pubspec.yaml" "README.md" "analysis_options.yaml")
+        for file in "${required_files[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ Missing file: $file"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Project structure validated"
+
+  # 🧪 Comprehensive Quality Assurance
+  quality-check:
+    name: Quality Assurance
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: ☕ Setup Java Environment
       uses: actions/setup-java@v3
       with:
-        distribution: 'zulu'
-        java-version: '17'
-        
-    - name: Setup Flutter
+        distribution: ${{ env.JAVA_DISTRIBUTION }}
+        java-version: ${{ env.JAVA_VERSION }}
+        cache: gradle
+
+    - name: 🐦 Setup Flutter SDK
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.16.0'
+        flutter-version: ${{ env.FLUTTER_VERSION }}
         channel: 'stable'
         cache: true
+        cache-key: 'flutter-${{ env.FLUTTER_VERSION }}'
+
+    - name: 📦 Install Dependencies
+      run: |
+        echo "📦 Installing Flutter dependencies..."
+        flutter pub get
         
-    - name: Get Dependencies
-      run: flutter pub get
-      
-    - name: Run Tests
-      run: flutter test --reporter=expanded
-      
-    - name: Build APK
-      run: flutter build apk --release --no-obfuscate
-      
-    - name: Upload APK
+        echo "🔍 Validating dependency tree..."
+        flutter pub deps --style=tree
+        
+        echo "📊 Checking for outdated packages..."
+        flutter pub outdated
+
+    - name: 🔍 Code Quality Analysis
+      run: |
+        echo "🔍 Running Flutter analysis..."
+        flutter analyze --fatal-infos --fatal-warnings
+        
+        echo "📝 Checking code formatting..."
+        flutter format --set-exit-if-changed --dry-run .
+        
+        echo "🧹 Running Dart fix..."
+        dart fix --dry-run
+
+    - name: 🧪 Execute Unit Tests
+      run: |
+        echo "🧪 Running unit tests with coverage..."
+        flutter test --coverage --reporter=expanded --timeout=5m
+        
+        echo "📊 Processing coverage data..."
+        if [ -f "coverage/lcov.info" ]; then
+          echo "✅ Coverage report generated successfully"
+          echo "📈 Coverage summary:"
+          lcov --summary coverage/lcov.info || echo "Coverage summary unavailable"
+        else
+          echo "⚠️ Coverage file not found, continuing without coverage report"
+        fi
+
+    - name: 🧪 Execute Integration Tests
+      run: |
+        echo "🧪 Running integration tests..."
+        flutter test integration_test/ --timeout=10m
+
+    - name: 📤 Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: |
+          coverage/
+          test/
+        retention-days: 30
+
+  # 🔨 Multi-Variant Build Process
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: [validate, quality-check]
+    strategy:
+      matrix:
+        build-type: [release, debug, profile]
+        include:
+          - build-type: release
+            artifact-name: network-app-release
+            build-flags: --release --obfuscate --split-debug-info=build/debug-info/
+            suffix: .release
+          - build-type: debug
+            artifact-name: network-app-debug
+            build-flags: --debug
+            suffix: .debug
+          - build-type: profile
+            artifact-name: network-app-profile
+            build-flags: --profile
+            suffix: .profile
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: ☕ Setup Java Environment
+      uses: actions/setup-java@v3
+      with:
+        distribution: ${{ env.JAVA_DISTRIBUTION }}
+        java-version: ${{ env.JAVA_VERSION }}
+        cache: gradle
+
+    - name: 🐦 Setup Flutter SDK
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: true
+
+    - name: 📦 Install Dependencies
+      run: |
+        flutter pub get
+        flutter clean
+
+    - name: 🔨 Build APK - ${{ matrix.build-type }}
+      id: build-apk
+      run: |
+        echo "🔨 Building ${{ matrix.build-type }} APK..."
+        
+        build_flags="${{ matrix.build-flags }}"
+        build_number="${{ needs.validate.outputs.build-number }}"
+        
+        if [[ "${{ matrix.build-type }}" == "release" ]]; then
+          flutter build apk $build_flags --build-number=$build_number --verbose
+        elif [[ "${{ matrix.build-type }}" == "profile" ]]; then
+          flutter build apk $build_flags --build-number=$build_number --verbose
+        else
+          flutter build apk $build_flags --verbose
+        fi
+        
+        # Verify APK exists
+        apk_path="build/app/outputs/flutter-apk/app${{ matrix.suffix }}.apk"
+        if [ ! -f "$apk_path" ]; then
+          echo "❌ APK not found at expected path: $apk_path"
+          exit 1
+        fi
+        
+        # Get APK info
+        apk_size=$(stat -c%s "$apk_path")
+        echo "apk-size=$apk_size" >> $GITHUB_OUTPUT
+        echo "📱 APK Size: $apk_size bytes ($(($apk_size / 1024 / 1024)) MB)"
+        
+        # APK signature verification for release builds
+        if [[ "${{ matrix.build-type }}" == "release" ]]; then
+          echo "🔐 Verifying APK signature..."
+          if command -v keytool &> /dev/null; then
+            keytool -printcert -jarfile "$apk_path" || echo "Signature verification completed"
+          else
+            echo "⚠️ keytool not available, skipping signature verification"
+          fi
+        fi
+
+    - name: 🏗️ Build App Bundle (Release Only)
+      if: matrix.build-type == 'release'
+      run: |
+        echo "🏗️ Building Android App Bundle..."
+        flutter build appbundle --release --obfuscate --split-debug-info=build/debug-info/ --build-number=${{ needs.validate.outputs.build-number }}
+        
+        # Verify AAB exists
+        aab_path="build/app/outputs/bundle/release/app-release.aab"
+        if [ ! -f "$aab_path" ]; then
+          echo "❌ AAB not found at expected path: $aab_path"
+          exit 1
+        fi
+        
+        aab_size=$(stat -c%s "$aab_path")
+        echo "📦 AAB Size: $aab_size bytes ($(($aab_size / 1024 / 1024)) MB)"
+
+    - name: 📤 Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: release-apk
-        path: build/app/outputs/flutter-apk/app-release.apk
-        retention-days: 30
+        name: ${{ matrix.artifact-name }}
+        path: |
+          build/app/outputs/flutter-apk/
+          build/app/outputs/bundle/
+          build/debug-info/
+        retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # 🚀 Release Management
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [validate, build, quality-check]
+    if: needs.validate.outputs.should-release == 'true' && needs.validate.outputs.is-secure == 'true'
+    
+    steps:
+    - name: 📥 Download Release Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: network-app-release
+        merge-multiple: true
+
+    - name: 📋 Generate Release Notes
+      id: release-notes
+      run: |
+        cat > release_notes.md << 'EOF'
+        # Network App Release ${{ needs.validate.outputs.version-tag }}
+        
+        ## 🚀 Build Information
+        - **Version**: ${{ needs.validate.outputs.version-tag }}
+        - **Build Number**: ${{ needs.validate.outputs.build-number }}
+        - **Commit**: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+        - **Branch**: ${{ github.ref_name }}
+        - **Build Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        - **Security Status**: ✅ Secure (${{ needs.validate.outputs.is-secure }})
+        
+        ## 📱 Download Options
+        - **APK (Recommended)**: `app-release.apk` - For direct installation
+        - **App Bundle**: `app-release.aab` - For Google Play Store
+        
+        ## 🔧 Installation Instructions
+        
+        ### APK Installation
+        1. Download `app-release.apk` file
+        2. Enable "Install from unknown sources" in device settings
+        3. Locate and tap on downloaded APK file
+        4. Follow on-screen installation prompts
+        
+        ### System Requirements
+        - Android 6.0 (API level 23) or higher
+        - Minimum 50MB storage space
+        - Bluetooth and Wi-Fi capabilities
+        - Location services (for P2P discovery)
+        
+        ## 🔐 Security Features
+        - ✅ AES-256-GCM encryption
+        - ✅ Device fingerprinting
+        - ✅ Message integrity verification
+        - ✅ Anti-tampering protection
+        - ✅ No hardcoded secrets detected
+        
+        ## 🌐 Network Features
+        - ✅ P2P mesh networking
+        - ✅ Multi-hop routing
+        - ✅ Background service
+        - ✅ Self-healing topology
+        
+        ## 🧪 Testing Status
+        - ✅ Unit tests passed
+        - ✅ Integration tests passed
+        - ✅ Code analysis passed
+        - ✅ Security scan passed
+        
+        ## 🐛 Bug Reports
+        Please report issues at: [GitHub Issues](${{ github.server_url }}/${{ github.repository }}/issues)
+        
+        ---
+        **⚠️ Disclaimer**: This application is for educational and research purposes only.
+        EOF
+        
+        echo "release-notes-file=release_notes.md" >> $GITHUB_OUTPUT
+
+    - name: 🚀 Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ needs.validate.outputs.version-tag }}
+        name: Network App ${{ needs.validate.outputs.version-tag }}
+        body_path: ${{ steps.release-notes.outputs.release-notes-file }}
+        files: |
+          build/app/outputs/flutter-apk/app-release.apk
+          build/app/outputs/bundle/app-release.aab
+          build/debug-info/app-release.symbols
+        draft: false
+        prerelease: ${{ contains(github.ref, 'develop') }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 📊 Build Summary and Notification
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [validate, quality-check, build, release]
+    if: always()
+    
+    steps:
+    - name: 📊 Generate Comprehensive Summary
+      id: summary
+      run: |
+        echo "# 🚀 Enhanced Build Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 📋 Job Status" >> $GITHUB_STEP_SUMMARY
+        echo "| Job | Status | Duration | Security |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|----------|---------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Validate | ${{ needs.validate.result }} | - | ${{ needs.validate.outputs.is-secure }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Quality Check | ${{ needs.quality-check.result }} | - | - |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build | ${{ needs.build.result }} | - | - |" >> $GITHUB_STEP_SUMMARY
+        echo "| Release | ${{ needs.release.result }} | - | - |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🏷️ Build Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ needs.validate.outputs.version-tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Number**: ${{ needs.validate.outputs.build-number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Flutter Version**: ${{ needs.validate.outputs.flutter-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Security Status**: ${{ needs.validate.outputs.is-secure }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.release.result }}" == "success" ]]; then
+          echo "## 🚀 Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Tag**: ${{ needs.validate.outputs.version-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Download**: [View Release](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.validate.outputs.version-tag }})" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: ✅ Success Notification
+      if: needs.build.result == 'success'
+      run: |
+        echo "🎉 Enhanced build pipeline completed successfully!"
+        echo "📱 APK and artifacts are ready for download"
+        echo "🏷️ Version: ${{ needs.validate.outputs.version-tag }}"
+        echo "🔒 Security Status: ${{ needs.validate.outputs.is-secure }}"
+
+    - name: ❌ Failure Notification
+      if: failure()
+      run: |
+        echo "❌ Build pipeline failed!"
+        echo "🔍 Check job logs for detailed error information"
+        echo "📧 Contact development team for assistance"

@@ -1,143 +1,222 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 
+/// Professional logging service with enterprise-grade features
 class LoggerService {
   static final LoggerService _instance = LoggerService._internal();
   factory LoggerService() => _instance;
   LoggerService._internal();
 
+  // Logging levels
+  static const String _levelDebug = 'DEBUG';
+  static const String _levelInfo = 'INFO';
+  static const String _levelWarning = 'WARNING';
+  static const String _levelError = 'ERROR';
+  static const String _levelFatal = 'FATAL';
+
+  // Configuration
   static const int _maxLogFiles = 5;
   static const int _maxLogSize = 1024 * 1024; // 1MB
+  static const String _defaultLogDir = 'logs';
 
+  String _currentLogLevel = _levelInfo;
+  List<String> _logBuffer = [];
+  bool _isInitialized = false;
+  late String _logDirectory;
+
+  /// Initialize the logging service
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+    
+    try {
+      // Create log directory
+      final appDir = await getApplicationDocumentsDirectory();
+      _logDirectory = '${appDir?.path ?? ''}/$_defaultLogDir';
+      await Directory(_logDirectory).create(recursive: true);
+      
+      _isInitialized = true;
+      _log(_levelInfo, 'LoggerService initialized');
+    } catch (e) {
+      developer.log('Failed to initialize LoggerService: $e');
+    }
+  }
+
+  /// Set logging level
+  void setLogLevel(String level) {
+    _currentLogLevel = level;
+    _log(_levelInfo, 'Log level set to: $level');
+  }
+
+  /// Log message with timestamp and optional metadata
   Future<void> log(String level, String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
-    final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
-    final tagStr = tag ?? 'NetworkApp';
-    final logMessage = '[$timestamp] [$level] [$tagStr] $message';
-    
-    // Console logging
-    if (level == 'ERROR') {
-      developer.log(logMessage, error: error, stackTrace: stackTrace);
-    } else if (level == 'WARNING') {
-      developer.log(logMessage);
-    } else {
-      developer.log(logMessage);
+    if (!_isInitialized) {
+      developer.log('LoggerService not initialized');
+      return;
     }
-    
-    // File logging
-    await _writeToFile(logMessage);
-    
-    // Error details
-    if (error != null) {
-      await _writeToFile('Error: $error');
-    }
-    if (stackTrace != null) {
-      await _writeToFile('StackTrace: $stackTrace');
+
+    try {
+      final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
+      final tagStr = tag ?? 'NetworkApp';
+      final logMessage = '[$timestamp] [$level] [$tagStr] $message';
+      
+      // Console logging
+      if (level == _levelError || level == _levelFatal) {
+        developer.log(logMessage, error: error, stackTrace: stackTrace);
+      } else {
+        developer.log(logMessage);
+      }
+      
+      // File logging
+      await _writeToLogFile(logMessage);
+      
+      // Maintain log buffer
+      _logBuffer.add(logMessage);
+      if (_logBuffer.length > 1000) {
+        _logBuffer.removeAt(0);
+      }
+      
+    } catch (e) {
+      developer.log('Failed to log message: $e');
     }
   }
 
-  Future<void> debug(String message, {String? tag}) => log('DEBUG', message, tag: tag);
-  Future<void> info(String message, {String? tag}) => log('INFO', message, tag: tag);
-  Future<void> warning(String message, {String? tag}) => log('WARNING', message, tag: tag);
-  Future<void> error(String message, {String? tag, dynamic error, StackTrace? stackTrace}) => 
-      log('ERROR', message, tag: tag, error: error, stackTrace: stackTrace);
-
-  Future<void> _writeToFile(String message) async {
+  /// Write log message to file
+  Future<void> _writeToLogFile(String message) async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${directory.path}/logs');
-      
-      if (!await logDir.exists()) {
-        await logDir.create(recursive: true);
-      }
-      
-      final now = DateTime.now();
-      final logFileName = 'network_app_${DateFormat('yyyy_MM_dd').format(now)}.log';
-      final logFile = File('${logDir.path}/$logFileName');
-      
-      // Check file size and rotate if necessary
-      if (await logFile.exists()) {
-        final fileSize = await logFile.length();
-        if (fileSize > _maxLogSize) {
-          await _rotateLogFiles(logDir);
-        }
-      }
-      
+      final logFile = File('$_logDirectory/app_${DateTime.now().day}.log');
       await logFile.writeAsString('$message\n', mode: FileMode.append);
+      
+      // Clean up old log files
+      await _cleanupOldLogFiles();
     } catch (e) {
-      developer.log('Failed to write log to file: $e');
+      developer.log('Failed to write to log file: $e');
     }
   }
 
-  Future<void> _rotateLogFiles(Directory logDir) async {
+  /// Clean up old log files
+  Future<void> _cleanupOldLogFiles() async {
     try {
-      final files = await logDir.list().where((entity) => 
-          entity is File && entity.path.endsWith('.log')).cast<File>().toList();
-      
-      files.sort((a, b) => a.statSync().modified.compareTo(b.statSync().modified));
-      
-      // Remove oldest files if we have too many
-      while (files.length >= _maxLogFiles) {
-        final oldestFile = files.removeAt(0);
-        await oldestFile.delete();
-      }
-      
-      // Rename current file with timestamp
-      final now = DateTime.now();
-      final timestamp = DateFormat('HH_mm_ss').format(now);
-      for (final file in files) {
-        if (file.path.contains('network_app_')) {
-          final newPath = file.path.replaceAll('.log', '_$timestamp.log');
-          await file.rename(newPath);
+      final logDir = Directory(_logDirectory);
+      if (await logDir.exists()) {
+        final files = await logDir.list().toList();
+        files.sort((a, b) => b.path.compareTo(a.path));
+        
+        // Keep only the most recent log files
+        if (files.length > _maxLogFiles) {
+          final filesToDelete = files.sublist(0, files.length - _maxLogFiles);
+          for (final file in filesToDelete) {
+            try {
+              await file.delete();
+            } catch (e) {
+              developer.log('Failed to delete log file ${file.path}: $e');
+            }
+          }
         }
       }
     } catch (e) {
-      developer.log('Failed to rotate log files: $e');
+      developer.log('Failed to cleanup log files: $e');
     }
   }
 
-  Future<List<String>> getLogFiles() async {
+  /// Debug logging
+  Future<void> debug(String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
+    await log(_levelDebug, message, tag: tag, error: error, stackTrace: stackTrace);
+  }
+
+  /// Info logging
+  Future<void> info(String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
+    await log(_levelInfo, message, tag: tag, error: error, stackTrace: stackTrace);
+  }
+
+  /// Warning logging
+  Future<void> warning(String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
+    await log(_levelWarning, message, tag: tag, error: error, stackTrace: stackTrace);
+  }
+
+  /// Error logging
+  Future<void> error(String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
+    await log(_levelError, message, tag: tag, error: error, stackTrace: stackTrace);
+  }
+
+  /// Fatal logging
+  Future<void> fatal(String message, {String? tag, dynamic error, StackTrace? stackTrace}) async {
+    await log(_levelFatal, message, tag: tag, error: error, stackTrace: stackTrace);
+  }
+
+  /// Get current log level
+  String get currentLogLevel => _currentLogLevel;
+
+  /// Get log buffer
+  List<String> get logBuffer => List.unmodifiable(_logBuffer);
+
+  /// Check if service is initialized
+  bool get isInitialized => _isInitialized;
+
+  /// Get log directory
+  String get logDirectory => _logDirectory;
+
+  /// Dispose resources
+  void dispose() {
+    _logBuffer.clear();
+    _isInitialized = false;
+    developer.log('LoggerService disposed');
+  }
+
+  /// Get log statistics
+  Map<String, dynamic> getStatistics() {
+    return {
+      'isInitialized': _isInitialized,
+      'currentLogLevel': _currentLogLevel,
+      'logDirectory': _logDirectory,
+      'bufferSize': _logBuffer.length,
+      'maxLogFiles': _maxLogFiles,
+      'maxLogSize': _maxLogSize,
+    };
+  }
+
+  /// Export logs for debugging
+  Future<String> exportLogs() async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${directory.path}/logs');
-      
-      if (!await logDir.exists()) {
-        return [];
+      final logDir = Directory(_logDirectory);
+      if (await logDir.exists()) {
+        final files = await logDir.list().toList();
+        files.sort((a, b) => b.path.compareTo(a.path));
+        
+        final buffer = StringBuffer();
+        for (final file in files) {
+          if (await file.exists()) {
+            final content = await file.readAsString();
+            buffer.writeln('=== ${file.path} ===');
+            buffer.writeln(content);
+            buffer.writeln('');
+          }
+        }
+        
+        return buffer.toString();
       }
-      
-      final files = await logDir.list().where((entity) => 
-          entity is File && entity.path.endsWith('.log')).cast<File>().toList();
-      
-      files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-      
-      return files.map((file) => file.path).toList();
     } catch (e) {
-      developer.log('Failed to get log files: $e');
-      return [];
+      return 'Failed to export logs: $e';
     }
   }
 
-  Future<String> getLogFileContent(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (await file.exists()) {
-        return await file.readAsString();
-      }
-      return 'File not found';
-    } catch (e) {
-      return 'Error reading file: $e';
-    }
-  }
-
+  /// Clear all logs
   Future<void> clearLogs() async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${directory.path}/logs');
-      
+      final logDir = Directory(_logDirectory);
       if (await logDir.exists()) {
-        await logDir.delete(recursive: true);
+        final files = await logDir.list().toList();
+        for (final file in files) {
+          try {
+            await file.delete();
+          } catch (e) {
+            developer.log('Failed to delete log file ${file.path}: $e');
+          }
+        }
       }
+      
+      _logBuffer.clear();
+      await log(_levelInfo, 'All logs cleared');
     } catch (e) {
       developer.log('Failed to clear logs: $e');
     }

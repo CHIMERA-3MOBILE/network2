@@ -7,9 +7,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
@@ -28,6 +30,27 @@ class BackgroundService : Service() {
         fun stopService(context: Context) {
             val intent = Intent(context, BackgroundService::class.java)
             context.stopService(intent)
+        }
+        
+        fun isBatteryOptimizationDisabled(context: Context): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                powerManager.isIgnoringBatteryOptimizations(context.packageName)
+            } else {
+                true // Battery optimization not available before Android M
+            }
+        }
+        
+        fun requestBatteryOptimizationExemption(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!isBatteryOptimizationDisabled(context)) {
+                    val intent = Intent().apply {
+                        action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                }
+            }
         }
     }
     
@@ -88,10 +111,10 @@ class BackgroundService : Service() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.WAKE_LOCK) == PackageManager.PERMISSION_GRANTED) {
             try {
                 wakeLock = powerManager.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK,
+                    PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                     "NetworkApp:BackgroundWakeLock"
                 ).apply {
-                    acquire(10 * 60 * 1000L) // 10 minutes
+                    acquire(24 * 60 * 60 * 1000L) // 24 hours
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

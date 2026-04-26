@@ -1,0 +1,70 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+
+    - name: Install dependencies
+      run: flutter pub get
+
+    - name: Generate build number
+      id: buildnumber
+      uses: einaregilsson/build-number@v1
+      with:
+        token: ${{ secrets.github_token }}
+
+    - name: Build APK
+      run: flutter build apk --release --build-number=${{ steps.buildnumber.build_number }}
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: network-app-release
+        path: build/app/outputs/flutter-apk/app-release.apk
+        retention-days: 30
+
+    - name: Create Release
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/app/outputs/flutter-apk/app-release.apk
+        name: Network App v${{ steps.buildnumber.build_number }}
+        body: |
+          ## Network App Release v${{ steps.buildnumber.build_number }}
+          
+          **Build Information:**
+          - Build Number: ${{ steps.buildnumber.build_number }}
+          - Commit: ${{ github.sha }}
+          
+          **Download:**
+          - APK: app-release.apk
+          
+          **Installation:**
+          1. Download the APK file
+          2. Enable "Install from unknown sources" on your device
+          3. Install the APK
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

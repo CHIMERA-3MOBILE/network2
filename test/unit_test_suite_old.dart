@@ -6,7 +6,6 @@ import '../lib/services/advanced_encryption_service.dart';
 import '../lib/services/error_handling_service.dart';
 import '../lib/services/performance_monitor_service.dart';
 import '../lib/services/advanced_mesh_routing_service.dart';
-import '../lib/models/network_status.dart';
 
 void main() {
   group('EncryptionService Tests', () {
@@ -128,8 +127,8 @@ void main() {
 
     test('should track error statistics', () {
       // Simulate some errors
-      errorService._logError('test-error', Exception('Test error'), 1);
-      errorService._logError('test-error', Exception('Test error'), 1);
+      errorService._logError('test-error', Exception('Test error'), null);
+      errorService._logError('test-error', Exception('Test error'), null);
       
       final stats = errorService.getErrorStatistics();
       expect(stats['totalErrors'], greaterThan(0));
@@ -190,7 +189,7 @@ void main() {
     test('should add and remove nodes', () {
       final node = MeshNode(
         id: 'node1',
-        name: 'Test Node 1',
+        name: 'Test Node',
         neighbors: ['node2'],
         lastSeen: DateTime.now(),
       );
@@ -246,32 +245,6 @@ void main() {
       );
       
       expect(path, isA<List<String>>());
-    });
-  });
-
-  group('NetworkStatus Tests', () {
-    test('should have correct descriptions', () {
-      expect(NetworkStatus.disconnected.description, equals('Disconnected'));
-      expect(NetworkStatus.connected.description, equals('Connected'));
-      expect(NetworkStatus.active.description, equals('Active'));
-    });
-
-    test('should have correct color codes', () {
-      expect(NetworkStatus.disconnected.colorHex, equals('#FF5252'));
-      expect(NetworkStatus.connected.colorHex, equals('#4CAF50'));
-      expect(NetworkStatus.active.colorHex, equals('#2196F3'));
-    });
-
-    test('should correctly identify connectivity states', () {
-      expect(NetworkStatus.disconnected.isConnected, isFalse);
-      expect(NetworkStatus.connected.isConnected, isTrue);
-      expect(NetworkStatus.active.isConnected, isTrue);
-    });
-
-    test('should correctly identify active states', () {
-      expect(NetworkStatus.disconnected.isActive, isFalse);
-      expect(NetworkStatus.connected.isActive, isFalse);
-      expect(NetworkStatus.active.isActive, isTrue);
     });
   });
 

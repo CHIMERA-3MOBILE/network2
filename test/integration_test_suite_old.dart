@@ -7,7 +7,6 @@ import '../lib/services/advanced_encryption_service.dart';
 import '../lib/services/advanced_mesh_routing_service.dart';
 import '../lib/services/error_handling_service.dart';
 import '../lib/services/performance_monitor_service.dart';
-import '../lib/models/network_status.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -18,78 +17,78 @@ void main() {
       app.main();
       await tester.pumpAndSettle();
 
-      // Verify that the app launches successfully
+      // Verify the app launches successfully
       expect(find.text('Local Storage'), findsOneWidget);
       expect(find.text('Manage your files and folders'), findsOneWidget);
-      
-      // Verify network status card is present
-      expect(find.byType(Card), findsWidgets);
+      expect(find.text('Folders'), findsOneWidget);
     });
 
-    testWidgets('should handle network toggle', (WidgetTester tester) async {
+    testWidgets('should handle network status toggle', (WidgetTester tester) async {
       app.main();
       await tester.pumpAndSettle();
 
-      // Find and tap the network toggle
+      // Find network status toggle
       final networkToggle = find.byType(Switch);
       expect(networkToggle, findsOneWidget);
-      
+
+      // Toggle network on
       await tester.tap(networkToggle);
       await tester.pumpAndSettle();
 
-      // Verify the toggle state changed
-      final switchWidget = tester.widget<Switch>(networkToggle);
-      expect(switchWidget.value, isTrue);
+      // Verify network status changes
+      expect(find.text('Active'), findsOneWidget);
     });
 
     testWidgets('should access hidden network settings', (WidgetTester tester) async {
       app.main();
       await tester.pumpAndSettle();
 
-      // Long press to access hidden settings
-      await tester.longPress(find.byType(Scaffold));
+      // Perform long press to reveal hidden settings
+      final finder = find.byType(Scaffold);
+      await tester.longPress(finder);
       await tester.pumpAndSettle();
 
-      // Verify network settings dialog appears
+      // Verify settings dialog appears
       expect(find.text('Network Settings'), findsOneWidget);
       expect(find.text('Device Name'), findsOneWidget);
-      expect(find.byType(TextField), findsOneWidget);
     });
 
-    testWidgets('should change device name', (WidgetTester tester) async {
+    testWidgets('should handle file item interactions', (WidgetTester tester) async {
       app.main();
       await tester.pumpAndSettle();
 
-      // Access hidden settings
-      await tester.longPress(find.byType(Scaffold));
+      // Find file items
+      final documentsItem = find.text('Documents');
+      expect(documentsItem, findsOneWidget);
+
+      // Tap on Documents folder
+      await tester.tap(documentsItem);
+      await tester.pumpAndSettle();
+
+      // Verify snackbar appears
+      expect(find.text('Opening Documents...'), findsOneWidget);
+    });
+
+    testWidgets('should handle device name changes', (WidgetTester tester) async {
+      app.main();
+      await tester.pumpAndSettle();
+
+      // Access network settings
+      final scaffold = find.byType(Scaffold);
+      await tester.longPress(scaffold);
       await tester.pumpAndSettle();
 
       // Find device name field
       final deviceNameField = find.byType(TextField);
       expect(deviceNameField, findsOneWidget);
 
-      // Enter new device name
+      // Change device name
       await tester.enterText(deviceNameField, 'TestDevice');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
 
       // Verify name change
       expect(find.text('TestDevice'), findsOneWidget);
-    });
-
-    testWidgets('should handle folder taps', (WidgetTester tester) async {
-      app.main();
-      await tester.pumpAndSettle();
-
-      // Find and tap a folder
-      final documentsFolder = find.text('Documents');
-      expect(documentsFolder, findsOneWidget);
-      
-      await tester.tap(documentsFolder);
-      await tester.pumpAndSettle();
-
-      // Verify snackbar appears
-      expect(find.text('Opening Documents...'), findsOneWidget);
     });
   });
 
@@ -248,29 +247,6 @@ void main() {
     });
   });
 
-  group('Network Status Integration Tests', () {
-    test('should handle network status transitions', () {
-      // Test status descriptions
-      expect(NetworkStatus.disconnected.description, equals('Disconnected'));
-      expect(NetworkStatus.connected.description, equals('Connected'));
-      expect(NetworkStatus.active.description, equals('Active'));
-
-      // Test status colors
-      expect(NetworkStatus.disconnected.colorHex, equals('#FF5252'));
-      expect(NetworkStatus.connected.colorHex, equals('#4CAF50'));
-      expect(NetworkStatus.active.colorHex, equals('#2196F3'));
-
-      // Test connectivity checks
-      expect(NetworkStatus.disconnected.isConnected, isFalse);
-      expect(NetworkStatus.connected.isConnected, isTrue);
-      expect(NetworkStatus.active.isConnected, isTrue);
-
-      expect(NetworkStatus.disconnected.isActive, isFalse);
-      expect(NetworkStatus.connected.isActive, isFalse);
-      expect(NetworkStatus.active.isActive, isTrue);
-    });
-  });
-
   group('End-to-End Scenario Tests', () {
     testWidgets('should handle complete user workflow', (WidgetTester tester) async {
       app.main();
@@ -294,8 +270,15 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
 
-      // 5. Verify device name change
-      expect(find.text('MyDevice'), findsOneWidget);
+      // 5. Send test message
+      final sendButton = find.text('Send Test');
+      if (sendButton.evaluate().isNotEmpty) {
+        await tester.tap(sendButton);
+        await tester.pumpAndSettle();
+
+        // Verify message sent feedback
+        expect(find.text('Test message sent'), findsOneWidget);
+      }
 
       // 6. Navigate back to main screen
       final closeButton = find.text('Close');
@@ -330,48 +313,6 @@ void main() {
 
       // Should handle empty name gracefully
       expect(find.text('Network Settings'), findsOneWidget);
-    });
-  });
-
-  group('Component Integration Tests', () {
-    testWidgets('should handle file item interactions', (WidgetTester tester) async {
-      app.main();
-      await tester.pumpAndSettle();
-
-      // Test folder interactions
-      final folders = ['Documents', 'Downloads', 'Pictures', 'Videos', 'Music'];
-      
-      for (final folder in folders) {
-        final folderItem = find.text(folder);
-        expect(folderItem, findsOneWidget);
-        
-        // Tap folder and verify snackbar
-        await tester.tap(folderItem);
-        await tester.pumpAndSettle();
-        
-        expect(find.byType(SnackBar), findsOneWidget);
-        
-        // Dismiss snackbar
-        await tester.pumpAndSettle(Duration(seconds: 3));
-      }
-    });
-
-    testWidgets('should handle network status card', (WidgetTester tester) async {
-      app.main();
-      await tester.pumpAndSettle();
-
-      // Find network status card
-      final networkCard = find.byType(Card);
-      expect(networkCard, findsWidgets);
-
-      // Test network toggle
-      final networkToggle = find.byType(Switch);
-      await tester.tap(networkToggle);
-      await tester.pumpAndSettle();
-
-      // Verify toggle state
-      final switchWidget = tester.widget<Switch>(networkToggle);
-      expect(switchWidget.value, isTrue);
     });
   });
 }

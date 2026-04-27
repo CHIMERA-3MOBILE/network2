@@ -80,11 +80,14 @@ class NetworkService {
       StreamController<NetworkStatus>.broadcast();
   final StreamController<Map<String, dynamic>> _errorController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<List<String>> _deviceListController =
+      StreamController<List<String>>.broadcast();
   
   // Public streams for external consumption
   Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
   Stream<NetworkStatus> get statusStream => _statusController.stream;
   Stream<Map<String, dynamic>> get errorStream => _errorController.stream;
+  Stream<List<String>> get deviceListStream => _deviceListController.stream;
 
   // Public getters with safety checks
   List<String> get connectedDevices => List.unmodifiable(_connectedDevices);

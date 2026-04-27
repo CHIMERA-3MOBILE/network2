@@ -4,7 +4,6 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/network_service.dart';
-import 'services/encryption_service.dart';
 import 'services/logger_service.dart';
 import 'services/settings_service.dart';
 import 'services/advanced_encryption_service.dart';
@@ -14,6 +13,9 @@ import 'widgets/animated_file_item.dart';
 import 'widgets/network_status_card.dart';
 import 'widgets/enhanced_ui_components.dart';
 import 'models/network_status.dart';
+import 'screens/chat_screen.dart';
+import 'screens/device_manager_screen.dart';
+import 'screens/settings_screen.dart';
 
 /// Professional application entry point with comprehensive initialization
 /// 
@@ -337,6 +339,7 @@ class _FileManagerScreenState extends State<FileManagerScreen>
           ),
         ],
       ),
+      drawer: _buildNavigationDrawer(),
       body: FadeTransition(
         opacity: _fadeAnimation,
         child: GestureDetector(
@@ -541,6 +544,96 @@ class _FileManagerScreenState extends State<FileManagerScreen>
       children: [
         const Text('A sophisticated file management utility with advanced networking capabilities.'),
       ],
+    );
+  }
+
+  Widget _buildNavigationDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.folder, size: 32),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _deviceName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'P2P Mesh Network',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_open),
+            title: const Text('File Manager'),
+            selected: true,
+            onTap: () => Navigator.pop(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.chat),
+            title: const Text('Secure Chat'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ChatScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.devices),
+            title: const Text('Device Manager'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const DeviceManagerScreen()),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.settings),
+            title: const Text('Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: const Text('About'),
+            onTap: () {
+              Navigator.pop(context);
+              _showAboutDialog();
+            },
+          ),
+        ],
+      ),
     );
   }
 }

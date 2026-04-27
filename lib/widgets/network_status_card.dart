@@ -1,23 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
-import '../models/network_status.dart';
 
 /// Professional network status card widget with Material Design 3
 class NetworkStatusCard extends StatefulWidget {
-  final NetworkStatus status;
-  final int deviceCount;
-  final bool isAdvertising;
-  final bool isDiscovering;
-  final VoidCallback? onTap;
+  final bool isActive;
+  final int connectedDevices;
+  final VoidCallback onToggle;
+  final VoidCallback onSettings;
 
   const NetworkStatusCard({
-    Key? key,
-    required this.status,
-    this.deviceCount = 0,
-    this.isAdvertising = false,
-    this.isDiscovering = false,
-    this.onTap,
-  }) : super(key: key);
+    super.key,
     required this.isActive,
     required this.connectedDevices,
     required this.onToggle,

@@ -90,7 +90,7 @@ class ErrorHandlingService {
         return result;
       } catch (error) {
         attempt++;
-        _recordError(operationName, error);
+        _recordError(operationName, error, attempt: attempt);
         
         // Check if we should retry
         if (attempt > maxRetries || (retryCondition != null && !retryCondition(error))) {
@@ -144,7 +144,7 @@ class ErrorHandlingService {
     } catch (error) {
       // Log the error
       await _logError(operationName, error, 1);
-      _recordError(operationName, error);
+      _recordError(operationName, error, attempt: 1);
       
       // Call custom error handler if provided
       if (onError != null) {
@@ -167,7 +167,7 @@ class ErrorHandlingService {
   }
 
   /// Record error for tracking and analysis
-  void _recordError(String operationName, dynamic error) {
+  void _recordError(String operationName, dynamic error, {int attempt = 1}) {
     _errorCounts[operationName] = (_errorCounts[operationName] ?? 0) + 1;
     _lastErrorTime[operationName] = DateTime.now();
     
@@ -175,6 +175,7 @@ class ErrorHandlingService {
       error: error,
       timestamp: DateTime.now(),
       operationName: operationName,
+      attempt: attempt,
     );
     
     _errorHistory.putIfAbsent(operationName, () => []);
@@ -292,11 +293,13 @@ class ErrorRecord {
   final dynamic error;
   final DateTime timestamp;
   final String operationName;
+  final int attempt;
   
   ErrorRecord({
     required this.error,
     required this.timestamp,
     required this.operationName,
+    this.attempt = 1,
   });
 }
 
@@ -333,21 +336,6 @@ class CircuitBreakerOpenException implements Exception {
   String toString() => 'CircuitBreakerOpenException: $message';
 }
 
-/// Error record for tracking
-class ErrorRecord {
-  final String operationName;
-  final dynamic error;
-  final DateTime timestamp;
-  final int attempt;
-  
-  ErrorRecord({
-    required this.operationName,
-    required this.error,
-    required this.timestamp,
-    required this.attempt,
-  });
-}
-
 /// Network exception for network-related errors
 class NetworkException implements Exception {
   final String message;
@@ -356,16 +344,4 @@ class NetworkException implements Exception {
   
   @override
   String toString() => 'NetworkException: $message';
-}
-
-/// Operation exception for operation failures
-class OperationException implements Exception {
-  final String message;
-  final String? operationName;
-  final dynamic originalError;
-  
-  OperationException(this.message, {this.operationName, this.originalError});
-  
-  @override
-  String toString() => 'OperationException: $message${operationName != null ? ' (Operation: $operationName)' : ''}';
 }

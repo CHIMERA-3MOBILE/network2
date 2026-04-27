@@ -763,6 +763,7 @@ class NetworkService {
       await _messageController.close();
       await _deviceListController.close();
       await _statusController.close();
+      await _errorController.close();
       
       _isInitialized = false;
       _logger.info('NetworkService disposed');

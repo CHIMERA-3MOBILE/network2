@@ -48,7 +48,7 @@ class LoggerService {
   
   // Performance monitoring
   int _totalLogs = 0;
-  int _logsByLevel = {};
+  Map<String, int> _logsByLevel = {};
   DateTime _lastReset = DateTime.now();
   
   // Log file management
@@ -66,7 +66,7 @@ class LoggerService {
     try {
       // Create log directory
       final appDir = await getApplicationDocumentsDirectory();
-      _logDirectory = '${appDir?.path ?? ''}/$_defaultLogDir';
+      _logDirectory = '${appDir.path}/$_defaultLogDir';
       await Directory(_logDirectory).create(recursive: true);
       
       // Initialize log file
